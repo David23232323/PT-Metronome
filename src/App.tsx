@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 
 // Audio engine constants
-const CLICK_FREQUENCY = 1000;
-const CLICK_DURATION = 0.05;
+const CLICK_FREQUENCY = 800; // Slightly lower for better mobile speaker response
+const CLICK_DURATION = 0.06;
 
 function App() {
   // Metronome State
@@ -37,9 +37,11 @@ function App() {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
+    // Mobile browsers often require resume() inside a user event
     if (audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume();
     }
+    return audioCtxRef.current;
   }, []);
 
   // Timer logic
@@ -69,20 +71,23 @@ function App() {
   const scheduler = useCallback(() => {
     if (!audioCtxRef.current) return;
 
+    // Schedule clicks for the next 100ms
     while (nextClickTimeRef.current < audioCtxRef.current.currentTime + 0.1) {
+      const time = nextClickTimeRef.current;
       const osc = audioCtxRef.current.createOscillator();
       const envelope = audioCtxRef.current.createGain();
 
       osc.frequency.value = CLICK_FREQUENCY;
-      envelope.gain.value = 1;
-      envelope.gain.exponentialRampToValueAtTime(1, nextClickTimeRef.current);
-      envelope.gain.exponentialRampToValueAtTime(0.001, nextClickTimeRef.current + CLICK_DURATION);
+      
+      // Use setValueAtTime for more reliable timing on mobile
+      envelope.gain.setValueAtTime(1, time);
+      envelope.gain.exponentialRampToValueAtTime(0.001, time + CLICK_DURATION);
 
       osc.connect(envelope);
       envelope.connect(audioCtxRef.current.destination);
 
-      osc.start(nextClickTimeRef.current);
-      osc.stop(nextClickTimeRef.current + CLICK_DURATION);
+      osc.start(time);
+      osc.stop(time + CLICK_DURATION);
 
       nextClickTimeRef.current += 60.0 / bpm;
     }
@@ -121,9 +126,10 @@ function App() {
   }, [bpm, words, readerEnabled, readFrequency, readVariance, readMode, currentIndex]);
 
   useEffect(() => {
-    if (isPlaying) {
-      nextClickTimeRef.current = audioCtxRef.current!.currentTime;
-      nextSpeechTimeRef.current = audioCtxRef.current!.currentTime + readFrequency;
+    if (isPlaying && audioCtxRef.current) {
+      // Start scheduling slightly in the future to avoid immediate timing jitter
+      nextClickTimeRef.current = audioCtxRef.current.currentTime + 0.05;
+      nextSpeechTimeRef.current = audioCtxRef.current.currentTime + readFrequency;
       if (readMode === 'sequential') setCurrentIndex(0);
       lastWordRef.current = '';
       timerRef.current = requestAnimationFrame(scheduler);
@@ -137,7 +143,16 @@ function App() {
 
   const handleToggle = () => {
     if (!isPlaying) {
-      initAudio();
+      const ctx = initAudio();
+      
+      // Play a tiny silent buffer to "unlock" the AudioContext on iOS
+      const buffer = ctx.createBuffer(1, 1, 22050);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.start(0);
+
+      // Unlock speech synthesis
       const dummy = new SpeechSynthesisUtterance("");
       dummy.volume = 0;
       window.speechSynthesis.speak(dummy);
