@@ -18,8 +18,8 @@ function App() {
   // Word Reader State
   const [words, setWords] = useState<string[]>(['A', 'B', 'C', 'D']);
   const [wordInput, setWordInput] = useState('A, B, C, D');
-  const [readFrequency, setReadFrequency] = useState(4); // Default to 4s
-  const [readVariance, setReadVariance] = useState(1.5); // Default to 1.5s
+  const [readFrequency, setReadFrequency] = useState(4);
+  const [readVariance, setReadVariance] = useState(1.5);
   const [readerEnabled, setReaderEnabled] = useState(false);
   const [readMode, setReadMode] = useState<'random' | 'sequential'>('random');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -89,7 +89,6 @@ function App() {
       
       if (readMode === 'random') {
         if (words.length > 1) {
-          // Avoid repeating the same word if possible
           let newWord = '';
           do {
             newWord = words[Math.floor(Math.random() * words.length)];
@@ -109,7 +108,6 @@ function App() {
         window.speechSynthesis.speak(utterance);
       }
 
-      // Calculate next speech time with variance
       const variance = readMode === 'random' ? (Math.random() * 2 - 1) * readVariance : 0;
       const nextInterval = Math.max(0.5, readFrequency + variance);
       nextSpeechTimeRef.current = audioCtxRef.current.currentTime + nextInterval;
@@ -207,7 +205,7 @@ function App() {
             Enable Word Reader
           </label>
           <p className="description">
-            Reads words or letters aloud at specific intervals. Great for drills, physical therapy, or randomized prompts.
+            Reads words or letters aloud at specific intervals.
           </p>
         </div>
         
@@ -242,17 +240,16 @@ function App() {
                 onChange={(e) => setReadFrequency(Math.max(0.5, parseFloat(e.target.value) || 0.5))}
               />
             </div>
-            {readMode === 'random' && (
-              <div className="input-group">
-                <label>Variance (±s)</label>
-                <input 
-                  type="number" 
-                  step="0.1"
-                  value={readVariance} 
-                  onChange={(e) => setReadVariance(Math.max(0, parseFloat(e.target.value) || 0))}
-                />
-              </div>
-            )}
+            <div className={`input-group ${readMode !== 'random' ? 'hidden-opacity' : ''}`}>
+              <label>Variance (±s)</label>
+              <input 
+                type="number" 
+                step="0.1"
+                value={readVariance} 
+                onChange={(e) => setReadVariance(Math.max(0, parseFloat(e.target.value) || 0))}
+                disabled={readMode !== 'random'}
+              />
+            </div>
           </div>
         </div>
       </div>
