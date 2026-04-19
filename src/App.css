@@ -117,6 +117,7 @@ h1 {
   height: 20px;
 }
 
+/* Timer Section */
 .timer-controls {
   display: flex;
   flex-direction: column;
@@ -155,24 +156,64 @@ h1 {
 .manual-timer {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
+  width: 100%;
+}
+
+.input-with-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.input-with-label label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
   color: var(--text-secondary);
 }
 
 .manual-timer input {
-  width: 60px;
-  padding: 0.5rem;
-  border-radius: 4px;
+  width: 70px;
+  padding: 0.6rem;
+  font-size: 1.2rem;
+  border-radius: 8px;
   border: 1px solid #444;
   background: #333;
   color: white;
   text-align: center;
 }
 
-input[type="number"], textarea {
-  font-size: 16px; /* Prevents iOS zoom on focus */
+.separator {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-top: -1.2rem;
 }
 
+.time-left-display {
+  background: rgba(100, 108, 255, 0.1);
+  padding: 0.75rem 1.5rem;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(100, 108, 255, 0.2);
+}
+
+.time-left-display .label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.time-left-display .time {
+  font-family: monospace;
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: var(--primary);
+}
+
+/* Word Reader Section */
 .reader-header {
   text-align: left;
   margin-bottom: 1.5rem;
@@ -200,12 +241,6 @@ input[type="number"], textarea {
   border-color: transparent;
 }
 
-.time-left {
-  font-family: monospace;
-  font-size: 1.5rem;
-  color: var(--primary);
-}
-
 .reader-inputs {
   display: flex;
   flex-direction: column;
@@ -228,6 +263,12 @@ input[type="number"], textarea {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
+  width: 100%;
+}
+
+.input-row input, .input-row select {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .hidden-opacity {
@@ -235,7 +276,10 @@ input[type="number"], textarea {
   pointer-events: none;
 }
 
+/* Common Inputs */
 textarea {
+  width: 100%;
+  box-sizing: border-box;
   min-height: 80px;
   padding: 0.8rem;
   border-radius: 8px;
@@ -243,6 +287,10 @@ textarea {
   background: #333;
   color: white;
   resize: vertical;
+}
+
+input[type="number"], textarea, select {
+  font-size: 16px; /* Prevents iOS zoom */
 }
 
 input[type="number"] {

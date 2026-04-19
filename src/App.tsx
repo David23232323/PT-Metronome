@@ -13,6 +13,7 @@ function App() {
   // Timer State
   const [timerEnabled, setTimerEnabled] = useState(false);
   const [timerMinutes, setTimerMinutes] = useState(1);
+  const [timerSeconds, setTimerSeconds] = useState(0);
   const [timeLeft, setTimeLeft] = useState(60);
 
   // Word Reader State
@@ -60,9 +61,9 @@ function App() {
 
   useEffect(() => {
     if (!isPlaying) {
-      setTimeLeft(timerMinutes * 60);
+      setTimeLeft(timerMinutes * 60 + timerSeconds);
     }
-  }, [timerMinutes, isPlaying]);
+  }, [timerMinutes, timerSeconds, isPlaying]);
 
   // Metronome & Reader Scheduler
   const scheduler = useCallback(() => {
@@ -150,6 +151,11 @@ function App() {
     setWords(newWords);
   };
 
+  const handlePresetClick = (m: number) => {
+    setTimerMinutes(m);
+    setTimerSeconds(0);
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -193,8 +199,8 @@ function App() {
               {[1, 3, 5, 10].map(m => (
                 <button 
                   key={m} 
-                  className={`preset-btn ${timerMinutes === m ? 'active' : ''}`}
-                  onClick={() => setTimerMinutes(m)}
+                  className={`preset-btn ${timerMinutes === m && timerSeconds === 0 ? 'active' : ''}`}
+                  onClick={() => handlePresetClick(m)}
                   disabled={isPlaying}
                 >
                   {m}m
@@ -202,17 +208,36 @@ function App() {
               ))}
             </div>
             <div className="manual-timer">
-              <input 
-                type="number" 
-                step="1"
-                inputMode="numeric"
-                value={timerMinutes} 
-                onChange={(e) => setTimerMinutes(Math.max(1, parseInt(e.target.value) || 1))}
-                disabled={isPlaying}
-              />
-              <span>min</span>
+              <div className="input-with-label">
+                <input 
+                  type="number" 
+                  step="1"
+                  inputMode="numeric"
+                  value={timerMinutes} 
+                  onChange={(e) => setTimerMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+                  disabled={isPlaying}
+                />
+                <label>min</label>
+              </div>
+              <span className="separator">:</span>
+              <div className="input-with-label">
+                <input 
+                  type="number" 
+                  step="1"
+                  min="0"
+                  max="59"
+                  inputMode="numeric"
+                  value={timerSeconds} 
+                  onChange={(e) => setTimerSeconds(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+                  disabled={isPlaying}
+                />
+                <label>sec</label>
+              </div>
             </div>
-            <div className="time-left">{formatTime(timeLeft)}</div>
+            <div className="time-left-display">
+              <span className="label">Remaining:</span>
+              <span className="time">{formatTime(timeLeft)}</span>
+            </div>
           </div>
         )}
       </div>
