@@ -12,14 +12,14 @@ function App() {
   
   // Timer State
   const [timerEnabled, setTimerEnabled] = useState(false);
-  const [timerMinutes, setTimerMinutes] = useState(1); // Default to 1 min
+  const [timerMinutes, setTimerMinutes] = useState(1);
   const [timeLeft, setTimeLeft] = useState(60);
 
   // Word Reader State
   const [words, setWords] = useState<string[]>(['A', 'B', 'C', 'D']);
   const [wordInput, setWordInput] = useState('A, B, C, D');
-  const [readFrequency, setReadFrequency] = useState(10); // seconds
-  const [readVariance, setReadVariance] = useState(3); // seconds
+  const [readFrequency, setReadFrequency] = useState(4); // Default to 4s
+  const [readVariance, setReadVariance] = useState(1.5); // Default to 1.5s
   const [readerEnabled, setReaderEnabled] = useState(false);
   const [readMode, setReadMode] = useState<'random' | 'sequential'>('random');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -29,6 +29,7 @@ function App() {
   const nextClickTimeRef = useRef(0);
   const timerRef = useRef<number | null>(null);
   const nextSpeechTimeRef = useRef(0);
+  const lastWordRef = useRef<string>('');
 
   // Initialize Audio Context
   const initAudio = useCallback(() => {
@@ -87,20 +88,30 @@ function App() {
       let selectedWord = '';
       
       if (readMode === 'random') {
-        selectedWord = words[Math.floor(Math.random() * words.length)];
+        if (words.length > 1) {
+          // Avoid repeating the same word if possible
+          let newWord = '';
+          do {
+            newWord = words[Math.floor(Math.random() * words.length)];
+          } while (newWord === lastWordRef.current);
+          selectedWord = newWord;
+        } else {
+          selectedWord = words[0] || '';
+        }
       } else {
-        selectedWord = words[currentIndex % words.length];
+        selectedWord = words[currentIndex % words.length] || '';
         setCurrentIndex(prev => (prev + 1) % words.length);
       }
 
       if (selectedWord) {
+        lastWordRef.current = selectedWord;
         const utterance = new SpeechSynthesisUtterance(selectedWord.toLowerCase());
         window.speechSynthesis.speak(utterance);
       }
 
       // Calculate next speech time with variance
       const variance = readMode === 'random' ? (Math.random() * 2 - 1) * readVariance : 0;
-      const nextInterval = Math.max(1, readFrequency + variance);
+      const nextInterval = Math.max(0.5, readFrequency + variance);
       nextSpeechTimeRef.current = audioCtxRef.current.currentTime + nextInterval;
     }
 
@@ -113,6 +124,7 @@ function App() {
       nextClickTimeRef.current = audioCtxRef.current!.currentTime;
       nextSpeechTimeRef.current = audioCtxRef.current!.currentTime + readFrequency;
       if (readMode === 'sequential') setCurrentIndex(0);
+      lastWordRef.current = '';
       timerRef.current = requestAnimationFrame(scheduler);
     } else {
       if (timerRef.current) cancelAnimationFrame(timerRef.current);
@@ -173,6 +185,7 @@ function App() {
           <div className="timer-controls">
             <input 
               type="number" 
+              step="1"
               value={timerMinutes} 
               onChange={(e) => setTimerMinutes(Math.max(1, parseInt(e.target.value) || 1))}
               disabled={isPlaying}
@@ -224,8 +237,9 @@ function App() {
               <label>Frequency (s)</label>
               <input 
                 type="number" 
+                step="0.5"
                 value={readFrequency} 
-                onChange={(e) => setReadFrequency(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) => setReadFrequency(Math.max(0.5, parseFloat(e.target.value) || 0.5))}
               />
             </div>
             {readMode === 'random' && (
@@ -233,8 +247,9 @@ function App() {
                 <label>Variance (±s)</label>
                 <input 
                   type="number" 
+                  step="0.1"
                   value={readVariance} 
-                  onChange={(e) => setReadVariance(Math.max(0, parseInt(e.target.value) || 0))}
+                  onChange={(e) => setReadVariance(Math.max(0, parseFloat(e.target.value) || 0))}
                 />
               </div>
             )}
