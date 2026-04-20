@@ -35,15 +35,28 @@ function App() {
   const nextSpeechTimeRef = useRef(0);
   const lastWordRef = useRef<string>('');
   const silentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
 
-  // Initialize Audio Context
+  // Initialize Audio Context with "Media Bridge"
   const initAudio = useCallback(() => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      // Create the silent audio element
+      silentAudioRef.current = new Audio(SILENT_MP3);
+      silentAudioRef.current.loop = true;
+      silentAudioRef.current.crossOrigin = "anonymous";
+
+      // Bridge: Connect the audio element to the Web Audio Context
+      // This "elevates" the context to Media status
+      sourceNodeRef.current = audioCtxRef.current.createMediaElementSource(silentAudioRef.current);
+      sourceNodeRef.current.connect(audioCtxRef.current.destination);
     }
+    
     if (audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume();
     }
+    
     return audioCtxRef.current;
   }, []);
 
@@ -79,7 +92,7 @@ function App() {
       const osc = audioCtxRef.current.createOscillator();
       const envelope = audioCtxRef.current.createGain();
 
-      osc.frequency.value = CLICK_FREQUENCY;
+      osc.frequency.setValueAtTime(CLICK_FREQUENCY, time);
       envelope.gain.setValueAtTime(1, time);
       envelope.gain.exponentialRampToValueAtTime(0.001, time + CLICK_DURATION);
 
@@ -95,7 +108,6 @@ function App() {
     // Word Reader Scheduling
     if (readerEnabled && nextSpeechTimeRef.current < audioCtxRef.current.currentTime) {
       let selectedWord = '';
-      
       if (readMode === 'random') {
         if (words.length > 1) {
           let newWord = '';
@@ -142,14 +154,12 @@ function App() {
 
   const handleToggle = () => {
     if (!isPlaying) {
-      initAudio();
+      const ctx = initAudio();
       
-      // The "Silent Loop" Hack
-      if (!silentAudioRef.current) {
-        silentAudioRef.current = new Audio(SILENT_MP3);
-        silentAudioRef.current.loop = true;
+      // Start the silent bridge audio
+      if (silentAudioRef.current) {
+        silentAudioRef.current.play().catch(console.error);
       }
-      silentAudioRef.current.play().catch(e => console.error("Silent audio failed", e));
 
       // Unlock speech synthesis
       const dummy = new SpeechSynthesisUtterance("");
