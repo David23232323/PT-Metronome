@@ -5,8 +5,27 @@ import './App.css';
 const CLICK_FREQUENCY = 1000;
 const CLICK_DURATION = 0.05;
 
-// 1 second of silence (Base64 encoded MP3)
-const SILENT_MP3 = "data:audio/mpeg;base64,SUQzBAAAAAABAFRYWFgAAAASAAADbWFqb3JfYnJhbmQAZGFzaABUWFhYAAAAEwAAA21pbm9yX3ZlcnNpb24AMABUWFhYAAAAHAAAA2NvbXBhdGlibGVfYnJhbmRzAGlzbzZtcDQyAFRTU0UAAAAPAAADTGF2ZjYwLjEwMC4xMDAAAAAAAAAAAAAAAABf/MUxAAAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/MUxBcAAAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/MUxB0AAAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
+// Stores the raw string while typing, validates and clamps on blur
+function useNumericInput(
+  initial: number,
+  opts: { min?: number; max?: number; integer?: boolean } = {}
+) {
+  const [display, setDisplay] = useState(String(initial));
+  const parseFn = opts.integer ? parseInt : parseFloat;
+
+  const parsed = parseFn(display);
+  const value = isNaN(parsed)
+    ? initial
+    : Math.min(opts.max ?? Infinity, Math.max(opts.min ?? -Infinity, parsed));
+
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDisplay(e.target.value);
+  };
+  const onBlur = () => setDisplay(String(value));
+  const set = (n: number) => setDisplay(String(n));
+
+  return { value, display, onChange, onBlur, set };
+}
 
 function App() {
   // Metronome State
@@ -15,15 +34,15 @@ function App() {
   
   // Timer State
   const [timerEnabled, setTimerEnabled] = useState(false);
-  const [timerMinutes, setTimerMinutes] = useState(1);
-  const [timerSeconds, setTimerSeconds] = useState(0);
+  const timerMin = useNumericInput(1, { min: 0, integer: true });
+  const timerSec = useNumericInput(0, { min: 0, max: 59, integer: true });
   const [timeLeft, setTimeLeft] = useState(60);
 
   // Word Reader State
   const [words, setWords] = useState<string[]>(['A', 'B', 'C', 'D']);
-  const [wordInput, setWordInput] = useState('A, B, C, D');
-  const [readFrequency, setReadFrequency] = useState(4);
-  const [readVariance, setReadVariance] = useState(1.5);
+  const [wordInput, setWordInput] = useState('A B C D');
+  const frequency = useNumericInput(4, { min: 0.5 });
+  const variance = useNumericInput(1.5, { min: 0 });
   const [readerEnabled, setReaderEnabled] = useState(false);
   const [readMode, setReadMode] = useState<'random' | 'sequential'>('random');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -34,29 +53,29 @@ function App() {
   const timerRef = useRef<number | null>(null);
   const nextSpeechTimeRef = useRef(0);
   const lastWordRef = useRef<string>('');
-  const silentAudioRef = useRef<HTMLAudioElement | null>(null);
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
 
-  // Initialize Audio Context with "Media Bridge"
   const initAudio = useCallback(() => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      
-      // Create the silent audio element
-      silentAudioRef.current = new Audio(SILENT_MP3);
-      silentAudioRef.current.loop = true;
-      silentAudioRef.current.crossOrigin = "anonymous";
-
-      // Bridge: Connect the audio element to the Web Audio Context
-      // This "elevates" the context to Media status
-      sourceNodeRef.current = audioCtxRef.current.createMediaElementSource(silentAudioRef.current);
-      sourceNodeRef.current.connect(audioCtxRef.current.destination);
     }
-    
+
     if (audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume();
     }
-    
+
+    // Bypass iOS silent mode: set audio session to "playback" so audio
+    // plays even when the device mute switch is on (Safari 17.4+)
+    if ('audioSession' in navigator) {
+      (navigator as any).audioSession.type = 'playback';
+    }
+
+    // Play a short silent buffer to fully activate the context on iOS
+    const warmUp = audioCtxRef.current.createBuffer(1, 1, audioCtxRef.current.sampleRate);
+    const src = audioCtxRef.current.createBufferSource();
+    src.buffer = warmUp;
+    src.connect(audioCtxRef.current.destination);
+    src.start();
+
     return audioCtxRef.current;
   }, []);
 
@@ -79,30 +98,43 @@ function App() {
 
   useEffect(() => {
     if (!isPlaying) {
-      setTimeLeft(timerMinutes * 60 + timerSeconds);
+      setTimeLeft(timerMin.value * 60 + timerSec.value);
     }
-  }, [timerMinutes, timerSeconds, isPlaying]);
+  }, [timerMin.value, timerSec.value, isPlaying]);
 
   // Metronome & Reader Scheduler
   const scheduler = useCallback(() => {
     if (!audioCtxRef.current) return;
 
-    while (nextClickTimeRef.current < audioCtxRef.current.currentTime + 0.1) {
-      const time = nextClickTimeRef.current;
+    const beatInterval = 60.0 / bpm;
+    const now = audioCtxRef.current.currentTime;
+
+    // If clicks have fallen far behind (e.g. tab was backgrounded),
+    // jump forward rather than scheduling a burst of catch-up clicks
+    if (nextClickTimeRef.current < now - beatInterval) {
+      const missed = Math.ceil((now - nextClickTimeRef.current) / beatInterval);
+      nextClickTimeRef.current += missed * beatInterval;
+    }
+
+    // Schedule clicks with a generous look-ahead so they're queued
+    // well before playback time, avoiding partially-elapsed envelopes
+    while (nextClickTimeRef.current < now + 0.25) {
+      // Clamp to now so the envelope always starts fresh
+      const playTime = Math.max(nextClickTimeRef.current, now);
       const osc = audioCtxRef.current.createOscillator();
       const envelope = audioCtxRef.current.createGain();
 
-      osc.frequency.setValueAtTime(CLICK_FREQUENCY, time);
-      envelope.gain.setValueAtTime(1, time);
-      envelope.gain.exponentialRampToValueAtTime(0.001, time + CLICK_DURATION);
+      osc.frequency.setValueAtTime(CLICK_FREQUENCY, playTime);
+      envelope.gain.setValueAtTime(1, playTime);
+      envelope.gain.exponentialRampToValueAtTime(0.001, playTime + CLICK_DURATION);
 
       osc.connect(envelope);
       envelope.connect(audioCtxRef.current.destination);
 
-      osc.start(time);
-      osc.stop(time + CLICK_DURATION);
+      osc.start(playTime);
+      osc.stop(playTime + CLICK_DURATION);
 
-      nextClickTimeRef.current += 60.0 / bpm;
+      nextClickTimeRef.current += beatInterval;
     }
 
     // Word Reader Scheduling
@@ -129,18 +161,18 @@ function App() {
         window.speechSynthesis.speak(utterance);
       }
 
-      const variance = readMode === 'random' ? (Math.random() * 2 - 1) * readVariance : 0;
-      const nextInterval = Math.max(0.5, readFrequency + variance);
+      const readVariance = readMode === 'random' ? (Math.random() * 2 - 1) * variance.value : 0;
+      const nextInterval = Math.max(0.5, frequency.value + readVariance);
       nextSpeechTimeRef.current = audioCtxRef.current.currentTime + nextInterval;
     }
 
     timerRef.current = requestAnimationFrame(scheduler);
-  }, [bpm, words, readerEnabled, readFrequency, readVariance, readMode, currentIndex]);
+  }, [bpm, words, readerEnabled, frequency.value, variance.value, readMode, currentIndex]);
 
   useEffect(() => {
     if (isPlaying && audioCtxRef.current) {
       nextClickTimeRef.current = audioCtxRef.current.currentTime + 0.05;
-      nextSpeechTimeRef.current = audioCtxRef.current.currentTime + readFrequency;
+      nextSpeechTimeRef.current = audioCtxRef.current.currentTime + frequency.value;
       if (readMode === 'sequential') setCurrentIndex(0);
       lastWordRef.current = '';
       timerRef.current = requestAnimationFrame(scheduler);
@@ -150,38 +182,29 @@ function App() {
     return () => {
       if (timerRef.current) cancelAnimationFrame(timerRef.current);
     };
-  }, [isPlaying, scheduler, readFrequency, readMode]);
+  }, [isPlaying, scheduler, frequency.value, readMode]);
 
   const handleToggle = () => {
     if (!isPlaying) {
       initAudio();
-      
-      // Start the silent bridge audio
-      if (silentAudioRef.current) {
-        silentAudioRef.current.play().catch(console.error);
-      }
 
-      // Unlock speech synthesis
+      // Unlock speech synthesis on iOS
       const dummy = new SpeechSynthesisUtterance("");
       dummy.volume = 0;
       window.speechSynthesis.speak(dummy);
-    } else {
-      if (silentAudioRef.current) {
-        silentAudioRef.current.pause();
-      }
     }
     setIsPlaying(!isPlaying);
   };
 
   const handleWordInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setWordInput(e.target.value);
-    const newWords = e.target.value.split(',').map(w => w.trim()).filter(w => w !== '');
+    const newWords = e.target.value.split(/\s+/).filter(w => w !== '');
     setWords(newWords);
   };
 
   const handlePresetClick = (m: number) => {
-    setTimerMinutes(m);
-    setTimerSeconds(0);
+    timerMin.set(m);
+    timerSec.set(0);
   };
 
   const formatTime = (seconds: number) => {
@@ -227,7 +250,7 @@ function App() {
               {[1, 3, 5, 10].map(m => (
                 <button 
                   key={m} 
-                  className={`preset-btn ${timerMinutes === m && timerSeconds === 0 ? 'active' : ''}`}
+                  className={`preset-btn ${timerMin.value === m && timerSec.value === 0 ? 'active' : ''}`}
                   onClick={() => handlePresetClick(m)}
                   disabled={isPlaying}
                 >
@@ -241,8 +264,9 @@ function App() {
                   type="number" 
                   step="1"
                   inputMode="numeric"
-                  value={timerMinutes} 
-                  onChange={(e) => setTimerMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+                  value={timerMin.display} 
+                  onChange={timerMin.onChange}
+                  onBlur={timerMin.onBlur}
                   disabled={isPlaying}
                 />
                 <label>min</label>
@@ -255,8 +279,9 @@ function App() {
                   min="0"
                   max="59"
                   inputMode="numeric"
-                  value={timerSeconds} 
-                  onChange={(e) => setTimerSeconds(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+                  value={timerSec.display} 
+                  onChange={timerSec.onChange}
+                  onBlur={timerSec.onBlur}
                   disabled={isPlaying}
                 />
                 <label>sec</label>
@@ -287,11 +312,11 @@ function App() {
         
         <div className="reader-inputs">
           <div className="input-group">
-            <label>Words (comma separated)</label>
+            <label>Words (space separated)</label>
             <textarea 
               value={wordInput} 
               onChange={handleWordInputChange}
-              placeholder="A, B, C, D"
+              placeholder="A B C D"
             />
           </div>
           
@@ -313,8 +338,9 @@ function App() {
                 type="number" 
                 step="0.5"
                 inputMode="decimal"
-                value={readFrequency} 
-                onChange={(e) => setReadFrequency(Math.max(0.5, parseFloat(e.target.value) || 0.5))}
+                value={frequency.display} 
+                onChange={frequency.onChange}
+                onBlur={frequency.onBlur}
               />
             </div>
             <div className={`input-group ${readMode !== 'random' ? 'hidden-opacity' : ''}`}>
@@ -323,8 +349,9 @@ function App() {
                 type="number" 
                 step="0.1"
                 inputMode="decimal"
-                value={readVariance} 
-                onChange={(e) => setReadVariance(Math.max(0, parseFloat(e.target.value) || 0))}
+                value={variance.display} 
+                onChange={variance.onChange}
+                onBlur={variance.onBlur}
                 disabled={readMode !== 'random'}
               />
             </div>
